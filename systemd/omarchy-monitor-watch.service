@@ -1,0 +1,16 @@
+[Unit]
+Description=Omarchy Monitor Profile Watcher
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchy-monitor-watch
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=HYPRLOCK_SIGNAL=1
+
+[Install]
+WantedBy=graphical-session.target

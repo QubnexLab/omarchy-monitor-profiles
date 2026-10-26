@@ -1,0 +1,14 @@
+// Omarchy Monitor Profiles Menu Config
+// Add to ~/.config/omarchy/extensions/omarchy-menu.jsonc
+
+// Main menu entry
+"monitor.profiles": {"icon":"","label":"Monitor Profiles","action":"omarchy-monitor-profiles list"},
+
+// Save current config
+"monitor.save": {"icon":"","label":"Save Profile","action":"omarchy-monitor-profiles save"},
+
+// Load a saved profile  
+"monitor.load": {"icon":"","label":"Load Profile","action":"omarchy-monitor-profiles load"},
+
+// View current profile
+"monitor.current": {"icon":"","label":"Current Profile","action":"omarchy-monitor-profiles current"},

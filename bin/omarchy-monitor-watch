@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# omarchy-monitor-watch - Watch for monitor changes and auto-apply profiles
+set -uo pipefail
+
+CONFIG_DIR="${HOME}/.config/omarchy/monitor-profiles"
+PROFILES_DIR="${CONFIG_DIR}/profiles"
+CURRENT_FILE="${CONFIG_DIR}/current"
+LOG_FILE="${CONFIG_DIR}/watch.log"
+
+mkdir -p "$PROFILES_DIR"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+get_monitor_fingerprint() {
+    hyprctl monitors -j | jq -r '[.[] | {name, width, height, refreshRate, x, y, scale, transform}] | sort_by(.name) | tostring' 2>/dev/null || echo ""
+}
+
+get_current_fingerprint() {
+    get_monitor_fingerprint
+}
+
+# Get initial fingerprint
+PREV_FP=$(get_current_fingerprint)
+log "Monitor watcher started. Initial fingerprint captured."
+
+while true; do
+    sleep 2
+    
+    CURR_FP=$(get_current_fingerprint)
+    
+    if [[ "$CURR_FP" != "$PREV_FP" ]]; then
+        log "Monitor configuration change detected."
+        
+        # Wait for monitors to settle
+        sleep 2
+        
+        CURR_FP=$(get_current_fingerprint)
+        
+        # Check if any saved profile matches current monitors
+        matched=false
+        for profile in "$PROFILES_DIR"/*.json; do
+            [[ -f "$profile" ]] || continue
+            profile_name=$(basename "$profile" .json)
+            
+            # Compare monitor configurations
+            profile_fps=$(jq -r '[.[] | {name, width, height, refreshRate, x, y, scale, transform}] | sort_by(.name) | tostring' "$profile" 2>/dev/null)
+            
+            if [[ "$CURR_FP" == "$profile_fps" ]]; then
+                log "Auto-applying matching profile: $profile_name"
+                omarchy-monitor-profiles load "$profile_name" 2>/dev/null || true
+                echo "$profile_name" > "$CURRENT_FILE"
+                matched=true
+                break
+            fi
+        done
+        
+        if [[ "$matched" == "false" ]]; then
+            log "No matching profile found for current monitor configuration."
+            # Still update current background
+            echo "$(get_current_fingerprint | jq -r '.[0].name // \"unknown\"')" > "$CURRENT_FILE" 2>/dev/null || true
+        fi
+        
+        PREV_FP="$CURR_FP"
+    fi
+done

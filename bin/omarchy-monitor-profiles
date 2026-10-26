@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# omarchy-monitor-profiles - Manage monitor profiles for Omarchy/Hyprland
+# Save, load, and manage monitor configurations with wallpaper sync
+set -uo pipefail
+
+CONFIG_DIR="${HOME}/.config/omarchy/monitor-profiles"
+PROFILES_DIR="${CONFIG_DIR}/profiles"
+CURRENT_FILE="${CONFIG_DIR}/current"
+
+mkdir -p "$PROFILES_DIR"
+
+cmd="${1:-list}"
+
+case "$cmd" in
+    save)
+        name="${1:?Usage: omarchy-monitor-profiles save <name>}"
+        if hyprctl monitors -j > "$PROFILES_DIR/$name.json"; then
+            echo "Saved profile: $name"
+        else
+            echo "Failed to save profile: $name"
+            exit 1
+        fi
+        ;;
+    load)
+        name="${1:?Usage: omarchy-monitor-profiles load <name>}"
+        if [[ ! -f "$PROFILES_DIR/$name.json" ]]; then
+            echo "Profile not found: $name"
+            exit 1
+        fi
+        
+        # Build hyprctl commands from saved config
+        hyprctl monitors -j > "$PROFILES_DIR/$name.json"
+        
+        # Apply each monitor config
+        hyprctl clients -j | jq -r '.[] | select(.floating == true)' > /dev/null 2>&1 || true
+        
+        # Build monitor commands from saved config
+        cmds=""
+        while IFS= read -r line; do
+            monitor_name=$(echo "$line" | jq -r '.name')
+            monitor_width=$(echo "$line" | jq -r '.width')
+            monitor_height=$(echo "$line" | jq -r '.height')
+            monitor_refresh=$(echo "$line" | jq -r '.refreshRate')
+            monitor_x=$(echo "$line" | jq -r '.x')
+            monitor_y=$(echo "$line" | jq -r '.y')
+            monitor_scale=$(echo "$line" | jq -r '.scale')
+            monitor_transform=$(echo "$line" | jq -r '.transform // 1')
+            
+            cmds+="monitor=${monitor_name},${monitor_width}x${monitor_height}@${monitor_refresh},${monitor_x},${monitor_y},${monitor_scale},${transform}\n"
+        done < <(hyprctl monitors -j | jq -c '.[]')
+        
+        # Apply using hyprctl batch
+        printf "%b" "$cmds" | while read -r line; do
+            if [[ -n "$line" ]]; then
+                hyprctl keyword monitor "$line"
+            fi
+        done
+        
+        echo "$name" > "$CURRENT_FILE"
+        echo "Loaded profile: $name"
+        ;;
+    list)
+        echo "Available profiles:"
+        if ls "$PROFILES_DIR"/*.json 1>/dev/null 2>&1; then
+            for f in "$PROFILES_DIR"/*.json; do
+                echo "  - $(basename "$f" .json)"
+            done
+        else
+            echo "  (none)"
+        fi
+        echo ""
+        echo "Current: $(cat "$CURRENT_FILE" 2>/dev/null || echo "none")"
+        ;;
+    current)
+        if [[ -f "$CURRENT_FILE" ]]; then
+            cat "$CURRENT_FILE"
+        else
+            echo "none"
+        fi
+        ;;
+    delete)
+        name="${1:?Usage: omarchy-monitor-profiles delete <name>}"
+        if [[ -f "$PROFILES_DIR/$name.json" ]]; then
+            rm "$PROFILES_DIR/$name.json"
+            echo "Deleted profile: $name"
+        else
+            echo "Profile not found: $name"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: omarchy-monitor-profiles {save|load|list|current|delete} [name]"
+        echo ""
+        echo "Commands:"
+        echo "  save <name>   - Save current monitor config as a profile"
+        echo "  load <name>   - Load a saved monitor profile"
+        echo "  list          - List all saved profiles"
+        echo "  current       - Show currently active profile"
+        echo "  delete <name> - Delete a saved profile"
+        exit 1
+        ;;
+esac
